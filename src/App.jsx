@@ -239,7 +239,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState('')
   const [error, setError] = useState('')
-  const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
+  const [geminiModel, setGeminiModel] = useState('gemini-3.1-pro-preview')
   const [nanoModel, setNanoModel] = useState('Nano Banana Pro 2')
   const [nanoQuality, setNanoQuality] = useState('4K')
   const [imageGenStates, setImageGenStates] = useState({})
@@ -369,39 +369,79 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
 
       contentParts.push({ text: buildUserMessage() })
 
-      const isProModel = geminiModel.includes('pro')
-      const timeoutMs = isProModel ? 180000 : 90000
-      setLoadingStatus(isProModel ? 'Sending to Gemini Pro (may take 30-90s)...' : 'Sending to Gemini Flash (usually 10-30s)...')
+      // Model fallback chain: try selected model first, then fallbacks
+      const FALLBACK_MODELS = {
+        'gemini-3.1-pro-preview': ['gemini-3-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-flash'],
+        'gemini-3-pro-preview': ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-flash'],
+        'gemini-3-flash-preview': ['gemini-3.1-pro-preview', 'gemini-2.5-flash'],
+        'gemini-2.5-flash': ['gemini-3-flash-preview', 'gemini-2.5-pro'],
+        'gemini-2.5-pro': ['gemini-2.5-flash', 'gemini-3-flash-preview'],
+      }
+      const modelsToTry = [geminiModel, ...(FALLBACK_MODELS[geminiModel] || ['gemini-3-flash-preview', 'gemini-2.5-flash'])]
 
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+      let data = null
+      let lastError = ''
 
-      const response = await fetch('/api/gemini', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: geminiModel,
-            body: {
-              system_instruction: { parts: [{ text: buildSystemPrompt() }] },
-              contents: [{ parts: contentParts }],
-              generationConfig: {
-                temperature: 0.8,
-                topP: 0.95,
-                maxOutputTokens: 4096,
-              }
-            }
-          })
+      for (const currentModel of modelsToTry) {
+        const isProModel = currentModel.includes('pro')
+        const timeoutMs = isProModel ? 180000 : 90000
+
+        if (currentModel !== geminiModel) {
+          setLoadingStatus(`${geminiModel} overloaded — trying ${currentModel}...`)
+          await new Promise(r => setTimeout(r, 1500))
+        } else {
+          setLoadingStatus(isProModel ? 'Sending to Gemini Pro (may take 30-90s)...' : 'Sending to Gemini Flash (usually 10-30s)...')
         }
-      )
-      clearTimeout(timeoutId)
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}))
-        throw new Error(errData.error?.message || `API error: ${response.status}`)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+        try {
+          const response = await fetch('/api/gemini', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+              body: JSON.stringify({
+                model: currentModel,
+                body: {
+                  system_instruction: { parts: [{ text: buildSystemPrompt() }] },
+                  contents: [{ parts: contentParts }],
+                  generationConfig: {
+                    temperature: 0.8,
+                    topP: 0.95,
+                    maxOutputTokens: 4096,
+                  }
+                }
+              })
+            }
+          )
+          clearTimeout(timeoutId)
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}))
+            lastError = errData.error?.message || `API error: ${response.status}`
+            // If overloaded or rate limited, try next model
+            if (response.status === 503 || response.status === 429) {
+              continue
+            }
+            throw new Error(lastError)
+          }
+
+          data = await response.json()
+          break // Success — exit loop
+        } catch (fetchErr) {
+          clearTimeout(timeoutId)
+          if (fetchErr.name === 'AbortError') {
+            lastError = 'Request timed out'
+            continue
+          }
+          throw fetchErr
+        }
       }
 
-      const data = await response.json()
+      if (!data) {
+        throw new Error(`All models are overloaded. ${lastError}. Please try again in a few minutes.`)
+      }
       setLoadingStatus('Parsing response...')
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text
 
@@ -521,6 +561,9 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
             <div className="model-selector">
               <label>Prompt Model</label>
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)}>
+                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (newest)</option>
+                <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
+                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
                 <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                 <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
               </select>
