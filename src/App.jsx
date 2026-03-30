@@ -239,7 +239,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState('')
   const [error, setError] = useState('')
-  const [geminiModel, setGeminiModel] = useState('gemini-3.1-pro-preview')
+  const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
   const [nanoModel, setNanoModel] = useState('Nano Banana Pro 2')
   const [nanoQuality, setNanoQuality] = useState('4K')
   const [imageGenStates, setImageGenStates] = useState({})
@@ -561,11 +561,11 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
             <div className="model-selector">
               <label>Prompt Model</label>
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)}>
-                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (newest)</option>
-                <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
-                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (stable)</option>
                 <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="gemini-3-flash-preview">Gemini 3 Flash (preview)</option>
+                <option value="gemini-3-pro-preview">Gemini 3 Pro (preview)</option>
+                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (preview)</option>
               </select>
             </div>
             <div className="model-selector">
