@@ -255,9 +255,18 @@ function App() {
 
 TARGET: ${nanoModel} at ${nanoQuality} resolution.
 
-YOUR GOAL: Generate 3 prompts that, when used with ${nanoModel} image AI, will produce images that:
-1. MATCH THE EXACT LAYOUT from the sketch — same wall positions, same furniture placement, same door/window locations, same camera angle and perspective
-2. LOOK LIKE REAL PHOTOGRAPHS — as if a professional photographer walked into the finished room and shot it with a high-end camera
+YOUR GOAL: Generate ONE prompt for EVERY sketch image provided (up to 5). If zero sketches are provided, generate 3 style variants.
+
+PROJECT COHESION (CRITICAL):
+You are generating prompts for a single, unified design project. All generated prompts MUST use the EXACT same:
+1. MATERIAL PALETTE (e.g., 'Reclaimed European Oak', 'Nero Marquina marble').
+2. LIGHTING CONFIGURATION (e.g., 'diffused afternoon sun through sheer curtains').
+3. PHOTOGRAPHIC STYLE (e.g., 'Canon R5, 24mm tilt-shift, f/8').
+The ONLY difference between prompts should be the spatial layout described for each specific sketch.
+
+CORE GOAL: For each sketch, generate a prompt that will produce an image that:
+1. MATCHES THE EXACT LAYOUT from that specific sketch — same wall positions, same furniture placement, same door/window locations, same camera angle and perspective.
+2. LOOKS LIKE A REAL PHOTOGRAPH — as if a professional photographer walked into the finished room and shot it.
 ${strictMode ? `
 ===== STRICT SKETCH MATCH MODE — ENABLED =====
 This is the HIGHEST PRIORITY instruction. The generated image MUST be at least 90% identical to the sketch layout.
@@ -326,40 +335,30 @@ ${strictMode ? '- Start each prompt with: "Recreate this exact interior layout a
 - For ${nanoModel === 'Nano Banana Pro 2' ? 'Pro 2: use more detailed and longer prompts (300-450 words for strict mode, 250-350 for normal), Pro 2 handles complex descriptions better and produces higher fidelity results' : 'standard Nano Banana: keep prompts focused and concise (250-350 words for strict mode, 200-280 for normal) for best results'}
 - Current target: ${nanoQuality} resolution
 
-THREE VARIANTS:
-${strictMode ? `- Prompt A (Exact Match): Reproduce the sketch with 90%+ spatial accuracy as a real photograph. EVERY object in the EXACT same position. Only enhance with realistic materials, textures, and professional lighting.
-- Prompt B (Luxury Match): SAME exact layout and positions (90%+ match), but with premium luxury materials — richer marble, gold accents, crystal fixtures, dramatic warm lighting. No position changes.
-- Prompt C (Editorial Match): SAME exact layout and positions (90%+ match), styled for Architectural Digest. Add ONLY small lifestyle props (books, small vase) on surfaces that already have space. Cinematic golden-hour lighting.` : `- Prompt A (Faithful): Reproduce the sketch EXACTLY as a real photograph. Same layout, same items, same perspective. Only add realistic materials, textures, and lighting.
-- Prompt B (Elevated): Same layout, but upgrade materials and lighting for luxury effect — richer textures, more dramatic warm lighting, higher-end finishes. Still the same room.
-- Prompt C (Editorial): Same layout, add lifestyle staging (books, flowers, coffee cup on console, soft throw). Cinematic golden-hour lighting. Styled as if shot for Architectural Digest.`}
-
 REFERENCE IMAGES (if provided):
-Match the exact material quality, color temperature, lighting warmth, and photographic style from the reference images. These show the TARGET quality level.
+Analyze the materials, color temperature, and lighting style from the reference images and APPLY THIS SAME STYLE consistently across ALL prompts for this project. These show the TARGET quality and aesthetic.
 
 OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
 {
   "prompts": [
     {
-      "label": "${strictMode ? 'Exact Match' : 'Faithful to Specs'}",
+      "label": "Sketch 1 (or 'Variant A' if no sketch)",
       "description": "Brief 1-line description",
       "prompt": "The full prompt text..."
     },
-    {
-      "label": "${strictMode ? 'Luxury Match' : 'Elevated Creative'}",
-      "description": "Brief 1-line description",
-      "prompt": "The full prompt text..."
-    },
-    {
-      "label": "${strictMode ? 'Editorial Match' : 'Editorial Magazine'}",
-      "description": "Brief 1-line description",
-      "prompt": "The full prompt text..."
-    }
+    ... (one for each sketch, or 3 if zero sketches)
   ]
 }`
   }
 
   const buildUserMessage = () => {
-    let msg = `Generate 3 interior design render prompts for this project:\n\n`
+    const sketchCount = sketchImages.length
+    const refCount = refImages.length
+    
+    let msg = sketchCount > 0 
+      ? `Generate exactly ${sketchCount} interior design prompts — one for each sketch provided. Ensure they share a unified theme (same materials, same lighting).\n\n`
+      : `Generate 3 interior design prompts with different style variants for this project:\n\n`
+
     const finalRoomType = roomType === 'Other...' ? customRoomType : roomType
     const finalStyle = style === 'Other...' ? customStyle : style
     msg += `PROJECT: ${projectName || 'Untitled'}\n`
@@ -380,8 +379,14 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
     msg += `TARGET AI MODEL: ${nanoModel}\n`
     msg += `TARGET QUALITY: ${nanoQuality}\n`
     msg += `STRICT SKETCH MATCH: ${strictSketchMatch ? 'YES — output image must match sketch layout 90%+. Every object in the EXACT same position, same camera angle, same proportions.' : 'NO — use sketch as general reference'}\n`
-    if (refImages.length > 0) msg += `\nREFERENCE IMAGES: ${refImages.length} reference image(s) attached — analyze their style, color palette, materials, and spatial layout to inform the prompts.\n`
-    if (sketchImages.length > 0) msg += `SKETCH/3D MODEL: ${sketchImages.length} sketch image(s) attached — CRITICAL: analyze the exact spatial layout, furniture positions, wall placements, architectural features, door/window locations, and camera perspective. ${strictSketchMatch ? 'Create an OBJECT-BY-OBJECT inventory: list every single item, its exact position relative to walls and other objects, its size relative to the room. The prompt must describe the scene so precisely that someone could recreate the sketch layout without seeing it.' : 'Describe this layout precisely in each prompt.'}\n`
+    
+    if (sketchCount > 0) {
+      msg += `\nCRITICAL: There are ${sketchCount} SKETCH images attached (first ${sketchCount} images). Generate ONE prompt for EACH sketch. Prompt 1 must analyze Sketch 1, Prompt 2 for Sketch 2, etc.\n`
+    }
+    if (refCount > 0) {
+      msg += `\nREFERENCE IMAGES: There are ${refCount} REFERENCE images attached (last ${refCount} images). Analyze their style/lighting only.\n`
+    }
+    
     return msg
   }
 
@@ -576,16 +581,16 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 65000) // 65s client timeout
 
+      // Only send reference images (for style), NOT sketch images
+      // Sketch images cause the model to copy the sketch instead of generating photorealistic images
+      // The text prompt already contains detailed spatial layout from sketch analysis
       const response = await fetch('/api/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          prompt: `Generate a photorealistic interior render based on this prompt. The generated image MUST match the sketch layout exactly — same camera angle, same object positions, same proportions:\n\n${promptText}`,
-          sketchImages: sketchImages.map(img => ({
-            mimeType: img.file.type || 'image/jpeg',
-            data: img.preview.split(',')[1]
-          })),
+          prompt: `Generate a photorealistic interior photograph. Do NOT produce a 3D render, wireframe, or sketch — produce a REAL photograph with real materials, real lighting, and real textures.\n\n${promptText}`,
+          sketchImages: [],
           refImages: refImages.map(img => ({
             mimeType: img.file.type || 'image/jpeg',
             data: img.preview.split(',')[1]
@@ -786,7 +791,9 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
               ) : (
                 <>
                   <Sparkles size={18} />
-                  Generate 3 Prompts
+                  {sketchImages.length > 0 
+                    ? `Generate ${sketchImages.length} Prompt${sketchImages.length > 1 ? 's' : ''}` 
+                    : 'Generate 3 Style Variants'}
                 </>
               )}
             </button>
