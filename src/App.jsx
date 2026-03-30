@@ -645,7 +645,7 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
         <div className="header-inner">
           <div className="logo">
             <div className="logo-icon" style={{ background: 'transparent' }}>
-              <img src="/Logo.png" alt="HG Logo" style={{ height: '80px', width: 'auto' }} />
+              <img src="/Logo.png" alt="HG Logo" style={{ height: '50px', width: 'auto' }} />
             </div>
             <div>
               <h1>Interior Prompt Studio</h1>
