@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react'
 import './App.css'
-import { 
-  Sparkles, Upload, X, ChevronDown, ChevronUp, Copy, Check, 
+import {
+  Sparkles, Upload, X, ChevronDown, ChevronUp, Copy, Check,
   Loader2, Image as ImageIcon, Paintbrush, Sofa, Sun, Camera,
-  Maximize, Layers, Home, Building2, ArrowRight
+  Maximize, Layers, Home, Building2, ArrowRight, Download, Wand2
 } from 'lucide-react'
 
 // API key is now stored securely on the server side
@@ -35,7 +35,7 @@ const DETAIL_LEVELS = [
 ]
 
 const ASPECT_RATIOS = [
-  '16:9 (Widescreen)', '4:3 (Classic)', '1:1 (Square)', 
+  '16:9 (Widescreen)', '4:3 (Classic)', '1:1 (Square)',
   '3:2 (Photography)', '9:16 (Portrait/Social)', '2:1 (Ultrawide)'
 ]
 
@@ -45,6 +45,14 @@ const LIGHTING_PRESETS = [
   'Ambient + accent (layered)', 'Chandelier / pendant warm',
   'Recessed spotlights', 'Backlit / silhouette',
   'Neon accent', 'Candlelight / moody'
+]
+
+const NANO_MODELS = [
+  'Nano Banana', 'Nano Banana Pro 2'
+]
+
+const NANO_QUALITY = [
+  '2K', '4K', '8K'
 ]
 
 function SelectField({ label, icon: Icon, options, value, onChange, placeholder }) {
@@ -63,8 +71,8 @@ function SelectField({ label, icon: Icon, options, value, onChange, placeholder 
       {open && (
         <div className="select-dropdown">
           {options.map(opt => (
-            <div 
-              key={opt} 
+            <div
+              key={opt}
               className={`select-option ${opt === value ? 'active' : ''}`}
               onClick={() => { onChange(opt); setOpen(false) }}
             >
@@ -82,12 +90,12 @@ function TextField({ label, icon: Icon, value, onChange, placeholder, multiline 
     <div className="field">
       <label><Icon size={16} /> {label}</label>
       {multiline ? (
-        <textarea 
+        <textarea
           value={value} onChange={e => onChange(e.target.value)}
           placeholder={placeholder} rows={3}
         />
       ) : (
-        <input 
+        <input
           type="text" value={value} onChange={e => onChange(e.target.value)}
           placeholder={placeholder}
         />
@@ -103,14 +111,14 @@ function ImageUpload({ label, images, onAdd, onRemove }) {
     const files = Array.from(e.target.files)
     const currentCount = images.length
     const remaining = 5 - currentCount
-    
+
     if (remaining <= 0) {
       alert('Maximum 5 images allowed.')
       return
     }
 
     const filesToProcess = files.slice(0, remaining)
-    
+
     filesToProcess.forEach(file => {
       const reader = new FileReader()
       reader.onload = (ev) => {
@@ -137,8 +145,8 @@ function ImageUpload({ label, images, onAdd, onRemove }) {
           <Upload size={20} />
           <span>Upload</span>
         </button>
-        <input 
-          ref={inputRef} type="file" accept="image/*" multiple 
+        <input
+          ref={inputRef} type="file" accept="image/*" multiple
           onChange={handleFiles} style={{ display: 'none' }}
         />
       </div>
@@ -146,13 +154,21 @@ function ImageUpload({ label, images, onAdd, onRemove }) {
   )
 }
 
-function PromptCard({ prompt, index, label, description }) {
+function PromptCard({ prompt, index, label, description, onGenImage, isGenning, genImages, targetModel }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(prompt)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleDownload = (img, idx) => {
+    const ext = img.mimeType?.includes('png') ? 'png' : 'jpg'
+    const link = document.createElement('a')
+    link.href = `data:${img.mimeType};base64,${img.data}`
+    link.download = `render-${label.toLowerCase().replace(/\s+/g, '-')}-${idx + 1}.${ext}`
+    link.click()
   }
 
   return (
@@ -171,6 +187,30 @@ function PromptCard({ prompt, index, label, description }) {
       </div>
 
       <pre className="prompt-text">{prompt}</pre>
+
+      {/* Gen image with Nano Banana */}
+      <div className="image-gen-container">
+        <button className="btn-image-gen" onClick={() => onGenImage(prompt)} disabled={isGenning}>
+          {isGenning ? (
+            <><Loader2 size={16} className="spin" /> Generating image...</>
+          ) : (
+            <><Wand2 size={16} /> Generate Image with {targetModel || 'Nano Banana'}</>
+          )}
+        </button>
+
+        {genImages && genImages.length > 0 && (
+          <div className="generated-images-grid">
+            {genImages.map((img, idx) => (
+              <div key={idx} className="generated-image-card">
+                <img src={`data:${img.mimeType};base64,${img.data}`} alt={`Render ${idx + 1}`} />
+                <button className="btn-download-image" onClick={() => handleDownload(img, idx)}>
+                  <Download size={12} /> Download
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -200,43 +240,71 @@ function App() {
   const [loadingStatus, setLoadingStatus] = useState('')
   const [error, setError] = useState('')
   const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
+  const [nanoModel, setNanoModel] = useState('Nano Banana Pro 2')
+  const [nanoQuality, setNanoQuality] = useState('4K')
+  const [imageGenStates, setImageGenStates] = useState({})
+  const [generatedImages, setGeneratedImages] = useState({})
 
   const resultsRef = useRef(null)
 
   const buildSystemPrompt = () => {
-    return `You are an expert interior design visualization prompt engineer with 15 years of experience creating photorealistic architectural renders using V-Ray, Corona, Octane, and AI image generators.
+    return `You are an expert interior design photographer and prompt engineer. You specialize in transforming 3D sketch models (SketchUp, 3ds Max wireframes) into prompts that produce images looking like REAL PHOTOGRAPHS taken inside actual built spaces — not 3D renders, not CGI, but real-life interior photography.
 
-Your task: Generate exactly 3 distinct, high-quality image generation prompts for an interior design render based on the project specifications provided.
+TARGET: ${nanoModel} at ${nanoQuality} resolution.
 
-RULES:
-1. Each prompt must be 120-200 words, highly detailed and specific.
-2. Each prompt should offer a DIFFERENT creative interpretation:
-   - Prompt A: Faithful to specs — closest to the client's exact requirements
-   - Prompt B: Elevated version — same specs but with a creative twist (unexpected material combo, dramatic lighting, artistic composition)
-   - Prompt C: Editorial/magazine quality — styled as if for Architectural Digest or Elle Decor, with lifestyle elements (books, flowers, coffee cup, morning light)
-3. Every prompt MUST include: exact room dimensions context, camera angle, specific materials with finish descriptions, lighting setup, color palette, furniture placement, and technical rendering tags.
-4. Use professional interior design and 3D rendering terminology.
-5. End each prompt with technical tags: photorealistic, 8K, [render engine], ray tracing, global illumination, physically based materials, [aspect ratio]
-6. If reference or sketch images are provided, incorporate their visual elements into the prompts.
-7. Account for ceiling height and room proportions to ensure furniture scale is realistic.
+YOUR GOAL: Generate 3 prompts that, when used with ${nanoModel} image AI, will produce images that:
+1. MATCH THE EXACT LAYOUT from the sketch — same wall positions, same furniture placement, same door/window locations, same camera angle and perspective
+2. LOOK LIKE REAL PHOTOGRAPHS — as if a professional photographer walked into the finished room and shot it with a high-end camera
+
+CRITICAL — SKETCH ANALYSIS (if sketch images provided):
+When analyzing the sketch, you MUST describe in the prompt:
+- Exact camera position and viewing angle (e.g. "viewed from the hallway entrance looking straight ahead")
+- What is on the LEFT wall, RIGHT wall, FRONT wall, and any visible BACK wall
+- Exact position of each piece of furniture relative to walls (e.g. "a console table against the right wall, 1 meter from the corner")
+- Position and style of doors (e.g. "double doors with X-pattern panels centered on the back wall")
+- Position and type of lighting fixtures (e.g. "wall sconce on the right wall above the console, pendant lamp in the alcove")
+- Architectural features: niches, shelving, crown molding, ceiling details, floor patterns
+- Depth and proportions of the space
+
+PROMPT STYLE FOR NANO BANANA:
+- Write in natural, flowing English paragraphs — no coded parameters, no flags
+- Start each prompt with: "A professional interior photograph of..."
+- Describe the scene as if you are standing in the room and describing what the camera sees, from foreground to background, left to right
+- For materials, use REAL-WORLD descriptions: "polished Portoro marble with gold veining", "brushed brass with patina", "dark walnut wood veneer with book-matched grain"
+- For lighting, describe it photographically: "warm ambient glow from recessed ceiling spots casting soft pools of light", "golden light from the wall sconce creating a warm halo on the textured wall"
+- Reference the look of REAL interior photography: "shot on a Canon EOS R5 with a 24mm tilt-shift lens, f/8, natural white balance"
+- End with resolution-appropriate quality tags:
+  * For 2K: photorealistic, high resolution, professional interior photography, natural lighting
+  * For 4K: photorealistic, ultra high resolution, 4K detail, professional interior photography, depth of field, natural lighting, editorial quality
+  * For 8K: photorealistic, 8K ultra high resolution, extreme fine detail, micro-texture rendering, professional interior photography, shallow depth of field, natural lighting, editorial quality, award-winning
+- For ${nanoModel === 'Nano Banana Pro 2' ? 'Pro 2: use more detailed and longer prompts (250-350 words), Pro 2 handles complex descriptions better and produces higher fidelity results' : 'standard Nano Banana: keep prompts focused and concise (200-280 words) for best results'}
+- Current target: ${nanoQuality} resolution
+
+THREE VARIANTS:
+- Prompt A (Faithful): Reproduce the sketch EXACTLY as a real photograph. Same layout, same items, same perspective. Only add realistic materials, textures, and lighting.
+- Prompt B (Elevated): Same layout, but upgrade materials and lighting for luxury effect — richer textures, more dramatic warm lighting, higher-end finishes. Still the same room.
+- Prompt C (Editorial): Same layout, add lifestyle staging (books, flowers, coffee cup on console, soft throw). Cinematic golden-hour lighting. Styled as if shot for Architectural Digest.
+
+REFERENCE IMAGES (if provided):
+Match the exact material quality, color temperature, lighting warmth, and photographic style from the reference images. These show the TARGET quality level.
 
 OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
 {
   "prompts": [
     {
       "label": "Faithful to Specs",
-      "description": "Brief 1-line description of this variant's approach",
-      "prompt": "The full prompt text here..."
+      "description": "Brief 1-line description",
+      "prompt": "The full prompt text..."
     },
     {
       "label": "Elevated Creative",
       "description": "Brief 1-line description",
-      "prompt": "The full prompt text here..."
+      "prompt": "The full prompt text..."
     },
     {
       "label": "Editorial Magazine",
       "description": "Brief 1-line description",
-      "prompt": "The full prompt text here..."
+      "prompt": "The full prompt text..."
     }
   ]
 }`
@@ -261,8 +329,10 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
     if (cameraAngle) msg += `CAMERA ANGLE: ${cameraAngle}\n`
     if (detailLevel) msg += `DETAIL LEVEL: ${detailLevel}\n`
     if (aspectRatio) msg += `ASPECT RATIO: ${aspectRatio}\n`
+    msg += `TARGET AI MODEL: ${nanoModel}\n`
+    msg += `TARGET QUALITY: ${nanoQuality}\n`
     if (refImages.length > 0) msg += `\nREFERENCE IMAGES: ${refImages.length} reference image(s) attached — analyze their style, color palette, materials, and spatial layout to inform the prompts.\n`
-    if (sketchImages.length > 0) msg += `SKETCH/FLOOR PLAN: ${sketchImages.length} sketch image(s) attached — use the spatial layout, furniture placement, and proportions shown.\n`
+    if (sketchImages.length > 0) msg += `SKETCH/3D MODEL: ${sketchImages.length} sketch image(s) attached — CRITICAL: analyze the exact spatial layout, furniture positions, wall placements, architectural features, door/window locations, and camera perspective. Describe this layout precisely in each prompt.\n`
     return msg
   }
 
@@ -276,6 +346,8 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
     setLoadingStatus('Preparing request...')
     setError('')
     setPrompts(null)
+    setGeneratedImages({})
+    setImageGenStates({})
 
     try {
       const contentParts = []
@@ -283,20 +355,16 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
         setLoadingStatus('Processing images...')
       }
 
-      for (const img of refImages) {
-        const base64 = img.preview.split(',')[1]
-        const mimeType = img.file.type || 'image/jpeg'
-        contentParts.push({
-          inlineData: { mimeType: mimeType, data: base64 }
-        })
-      }
-
       for (const img of sketchImages) {
         const base64 = img.preview.split(',')[1]
         const mimeType = img.file.type || 'image/jpeg'
-        contentParts.push({
-          inlineData: { mimeType: mimeType, data: base64 }
-        })
+        contentParts.push({ inlineData: { mimeType, data: base64 } })
+      }
+
+      for (const img of refImages) {
+        const base64 = img.preview.split(',')[1]
+        const mimeType = img.file.type || 'image/jpeg'
+        contentParts.push({ inlineData: { mimeType, data: base64 } })
       }
 
       contentParts.push({ text: buildUserMessage() })
@@ -344,17 +412,14 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
         const cleaned = text.replace(/```json\s*/g, '').replace(/```/g, '').trim()
         parsed = JSON.parse(cleaned)
       } catch (e) {
-        // Fallback: try to extract just the JSON object/array
         try {
           const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/)
           if (match) {
-            // Fix common truncation issues by adding closing brackets if missing
             let jsonStr = match[0]
-            if (jsonStr.endsWith('"}')) { } // Looks okay
+            if (jsonStr.endsWith('"}')) { }
             else if (!jsonStr.endsWith('}') && !jsonStr.endsWith(']')) {
-               jsonStr += '"}]}' // Blind guess for prompt schema
+               jsonStr += '"}]}'
             }
-            // Strip control characters that might break JSON.parse
             jsonStr = jsonStr.replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
             parsed = JSON.parse(jsonStr)
           } else {
@@ -386,7 +451,45 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
       setIsLoading(false)
       setLoadingStatus('')
     }
+  }
 
+  const handleGenImage = async (promptText, promptIndex) => {
+    setImageGenStates(prev => ({ ...prev, [promptIndex]: true }))
+    setError('')
+
+    try {
+      const response = await fetch('/api/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `Generate a photorealistic interior render based on this prompt:\n\n${promptText}`,
+          sketchImages: sketchImages.map(img => ({
+            mimeType: img.file.type || 'image/jpeg',
+            data: img.preview.split(',')[1]
+          })),
+          refImages: refImages.map(img => ({
+            mimeType: img.file.type || 'image/jpeg',
+            data: img.preview.split(',')[1]
+          }))
+        })
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || `API error: ${response.status}`)
+
+      if (data.images?.length > 0) {
+        setGeneratedImages(prev => ({
+          ...prev,
+          [promptIndex]: [...(prev[promptIndex] || []), ...data.images]
+        }))
+      } else {
+        throw new Error('No image generated. Try a different prompt.')
+      }
+    } catch (err) {
+      setError(`Image generation error: ${err.message}`)
+    } finally {
+      setImageGenStates(prev => ({ ...prev, [promptIndex]: false }))
+    }
   }
 
   const handleReset = () => {
@@ -396,7 +499,9 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
     setLighting(''); setMoodVibe(''); setCameraAngle('')
     setDetailLevel(''); setAspectRatio('')
     setRefImages([]); setSketchImages([])
+    setNanoModel('Nano Banana Pro 2'); setNanoQuality('4K')
     setPrompts(null); setError('')
+    setGeneratedImages({}); setImageGenStates({})
   }
 
   return (
@@ -418,7 +523,18 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)}>
                 <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                 <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+              </select>
+            </div>
+            <div className="model-selector">
+              <label>Target</label>
+              <select value={nanoModel} onChange={e => setNanoModel(e.target.value)}>
+                {NANO_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="model-selector">
+              <label>Quality</label>
+              <select value={nanoQuality} onChange={e => setNanoQuality(e.target.value)}>
+                {NANO_QUALITY.map(q => <option key={q} value={q}>{q}</option>)}
               </select>
             </div>
           </div>
@@ -434,22 +550,22 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
               <TextField label="Floor" icon={Layers} value={floor} onChange={setFloor} placeholder="e.g. 2nd Floor, Penthouse" />
               <SelectField label="Room Type" icon={Home} options={ROOM_TYPES} value={roomType} onChange={setRoomType} />
               {roomType === 'Other...' && (
-                <TextField 
-                  label="Custom Room Type" 
-                  icon={ArrowRight} 
-                  value={customRoomType} 
-                  onChange={setCustomRoomType} 
-                  placeholder="e.g. Golf Simulator, Cigar Lounge" 
+                <TextField
+                  label="Custom Room Type"
+                  icon={ArrowRight}
+                  value={customRoomType}
+                  onChange={setCustomRoomType}
+                  placeholder="e.g. Golf Simulator, Cigar Lounge"
                 />
               )}
               <SelectField label="Style" icon={Paintbrush} options={STYLES} value={style} onChange={setStyle} />
               {style === 'Other...' && (
-                <TextField 
-                  label="Custom Style" 
-                  icon={ArrowRight} 
-                  value={customStyle} 
-                  onChange={setCustomStyle} 
-                  placeholder="e.g. Cyberpunk, Medieval, Cyber-Organic" 
+                <TextField
+                  label="Custom Style"
+                  icon={ArrowRight}
+                  value={customStyle}
+                  onChange={setCustomStyle}
+                  placeholder="e.g. Cyberpunk, Medieval, Cyber-Organic"
                 />
               )}
             </div>
@@ -493,15 +609,15 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
           <section className="form-section">
             <h2><ImageIcon size={18} /> Reference Images</h2>
             <div className="fields-grid full-width">
-              <ImageUpload 
-                label="Reference / Inspiration Images" 
-                images={refImages} 
+              <ImageUpload
+                label="Reference / Inspiration Images"
+                images={refImages}
                 onAdd={img => setRefImages(prev => [...prev, img])}
                 onRemove={i => setRefImages(prev => prev.filter((_, idx) => idx !== i))}
               />
-              <ImageUpload 
-                label="Sketch / Floor Plan Images" 
-                images={sketchImages} 
+              <ImageUpload
+                label="Sketch / Floor Plan Images"
+                images={sketchImages}
                 onAdd={img => setSketchImages(prev => [...prev, img])}
                 onRemove={i => setSketchImages(prev => prev.filter((_, idx) => idx !== i))}
               />
@@ -510,14 +626,14 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
 
           <div className="actions">
             <button className="btn-secondary" onClick={handleReset}>Reset All</button>
-            <button 
-              className="btn-primary" 
-              onClick={handleGenerate} 
+            <button
+              className="btn-primary"
+              onClick={handleGenerate}
               disabled={isLoading}
             >
               {isLoading ? (
                 <>
-                  <span className="loader"></span>
+                  <Loader2 size={18} className="spin" />
                   {loadingStatus || 'Generating...'}
                 </>
               ) : (
@@ -535,12 +651,16 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
         {prompts && (
           <div className="results" ref={resultsRef}>
             <h2><Sparkles size={20} /> Generated Prompts</h2>
-            <p className="results-subtitle">Click copy to use any prompt in your AI image generator</p>
+            <p className="results-subtitle">Optimized for {nanoModel} ({nanoQuality}). Copy prompt or generate image directly below.</p>
             <div className="prompts-grid">
               {prompts.map((p, i) => (
-                <PromptCard 
-                  key={i} index={i} prompt={p.prompt} label={p.label} 
-                  description={p.description} 
+                <PromptCard
+                  key={i} index={i} prompt={p.prompt} label={p.label}
+                  description={p.description}
+                  onGenImage={(text) => handleGenImage(text, i)}
+                  isGenning={imageGenStates[i] || false}
+                  genImages={generatedImages[i] || []}
+                  targetModel={nanoModel}
                 />
               ))}
             </div>
