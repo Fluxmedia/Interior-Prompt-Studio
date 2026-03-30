@@ -456,9 +456,10 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
                   system_instruction: { parts: [{ text: buildSystemPrompt() }] },
                   contents: [{ parts: contentParts }],
                   generationConfig: {
-                    temperature: 0.8,
+                    temperature: 0.7,
                     topP: 0.95,
-                    maxOutputTokens: 4096,
+                    maxOutputTokens: 8192,
+                    responseMimeType: 'application/json',
                   }
                 }
               })
@@ -494,34 +495,59 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
       setLoadingStatus('Parsing response...')
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text
 
-      if (!text) throw new Error('No response from Gemini')
+      if (!text) {
+        // Check if response was blocked or had other issues
+        const finishReason = data.candidates?.[0]?.finishReason
+        if (finishReason === 'MAX_TOKENS') {
+          throw new Error('Response was too long and got cut off. Try selecting a simpler style or fewer details.')
+        }
+        if (finishReason === 'SAFETY') {
+          throw new Error('Response was blocked by safety filters. Try adjusting your input.')
+        }
+        throw new Error(`No response from Gemini (reason: ${finishReason || 'unknown'})`)
+      }
 
       let parsed;
+      // Step 1: Try direct JSON parse (responseMimeType should give clean JSON)
       try {
-        const cleaned = text.replace(/```json\s*/g, '').replace(/```/g, '').trim()
-        parsed = JSON.parse(cleaned)
-      } catch (e) {
+        parsed = JSON.parse(text)
+      } catch (e1) {
+        // Step 2: Clean markdown wrappers
         try {
-          const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/)
-          if (match) {
-            let jsonStr = match[0]
-            if (jsonStr.endsWith('"}')) { }
-            else if (!jsonStr.endsWith('}') && !jsonStr.endsWith(']')) {
-               jsonStr += '"}]}'
+          const cleaned = text.replace(/```json\s*/g, '').replace(/```/g, '').trim()
+          parsed = JSON.parse(cleaned)
+        } catch (e2) {
+          // Step 3: Extract JSON object from text
+          try {
+            // Find the outermost { ... } block
+            let depth = 0, start = -1, end = -1
+            for (let i = 0; i < text.length; i++) {
+              if (text[i] === '{') { if (depth === 0) start = i; depth++ }
+              if (text[i] === '}') { depth--; if (depth === 0) { end = i; break } }
             }
-            jsonStr = jsonStr.replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
-            parsed = JSON.parse(jsonStr)
-          } else {
-            throw e
+            if (start >= 0 && end > start) {
+              let jsonStr = text.substring(start, end + 1)
+              // Fix common issues: control characters, trailing commas
+              jsonStr = jsonStr.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+              jsonStr = jsonStr.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']')
+              parsed = JSON.parse(jsonStr)
+            } else {
+              throw new Error('No JSON found')
+            }
+          } catch (e3) {
+            console.error("Raw response:", text.substring(0, 500))
+            throw new Error('AI returned malformed data. Try re-generating. (Tip: try Gemini 2.5 Pro for more reliable JSON output)')
           }
-        } catch (innerError) {
-          console.error("Raw response:", text)
-          throw new Error('AI returned malformed data. Try re-generating.')
         }
       }
 
+      // Normalize: handle both {prompts: [...]} and direct array [...]
+      if (Array.isArray(parsed)) {
+        parsed = { prompts: parsed }
+      }
+
       if (!parsed?.prompts || parsed.prompts.length === 0) {
-        throw new Error('Invalid response format')
+        throw new Error('Invalid response format — no prompts found')
       }
 
       setPrompts(parsed.prompts)
