@@ -242,12 +242,15 @@ function App() {
   const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
   const [nanoModel, setNanoModel] = useState('Nano Banana Pro 2')
   const [nanoQuality, setNanoQuality] = useState('4K')
+  const [strictSketchMatch, setStrictSketchMatch] = useState(true)
   const [imageGenStates, setImageGenStates] = useState({})
   const [generatedImages, setGeneratedImages] = useState({})
 
   const resultsRef = useRef(null)
 
   const buildSystemPrompt = () => {
+    const strictMode = strictSketchMatch
+
     return `You are an expert interior design photographer and prompt engineer. You specialize in transforming 3D sketch models (SketchUp, 3ds Max wireframes) into prompts that produce images looking like REAL PHOTOGRAPHS taken inside actual built spaces — not 3D renders, not CGI, but real-life interior photography.
 
 TARGET: ${nanoModel} at ${nanoQuality} resolution.
@@ -255,7 +258,50 @@ TARGET: ${nanoModel} at ${nanoQuality} resolution.
 YOUR GOAL: Generate 3 prompts that, when used with ${nanoModel} image AI, will produce images that:
 1. MATCH THE EXACT LAYOUT from the sketch — same wall positions, same furniture placement, same door/window locations, same camera angle and perspective
 2. LOOK LIKE REAL PHOTOGRAPHS — as if a professional photographer walked into the finished room and shot it with a high-end camera
+${strictMode ? `
+===== STRICT SKETCH MATCH MODE — ENABLED =====
+This is the HIGHEST PRIORITY instruction. The generated image MUST be at least 90% identical to the sketch layout.
 
+MANDATORY SPATIAL MAPPING — You must create a PRECISE spatial inventory from the sketch:
+
+1. CAMERA (highest priority):
+   - Exact viewpoint position (e.g. "camera placed at the doorway threshold, 1.5m height, facing 30 degrees to the right")
+   - Exact lens perspective: wide-angle, normal, or telephoto feel
+   - Exact tilt: level, slightly looking up, or slightly looking down
+   - The output image MUST have the IDENTICAL camera angle as the sketch — this is non-negotiable
+
+2. OBJECT-BY-OBJECT INVENTORY (list EVERY visible item):
+   For EACH object in the sketch, describe:
+   - What it is (e.g. "tall open bookshelf with 5 glass shelves")
+   - Exact position: which wall, how far from corners, how far from floor
+   - Exact size relative to the room (e.g. "bookshelf occupies the left 30% of the back wall, floor to 80% ceiling height")
+   - Relationship to neighboring objects (e.g. "floor lamp stands between the bookshelf and console table, 40cm from each")
+
+3. WALL-BY-WALL DESCRIPTION:
+   - LEFT WALL: List everything on/against it, from front to back
+   - RIGHT WALL: List everything on/against it, from front to back
+   - FRONT/BACK WALL: List everything visible
+   - Describe wall color, texture, any architectural details (molding, panels, niches)
+
+4. FLOOR & CEILING:
+   - Floor material, pattern, color
+   - Ceiling height, any details (recessed areas, crown molding, lighting fixtures)
+
+5. PROPORTIONS — Critical for 90% match:
+   - Describe the room's width-to-depth ratio as visible from camera
+   - Describe how much of the frame each wall occupies
+   - Describe foreground vs. background depth
+
+STRICT MATCH RULES:
+- Do NOT add ANY furniture or objects that are NOT in the sketch
+- Do NOT remove ANY objects that ARE in the sketch
+- Do NOT change the position of ANY object
+- Do NOT change the camera angle or perspective
+- You MAY enhance: materials, textures, lighting quality, surface details
+- You MAY add: realistic shadows, reflections, ambient lighting
+- The prompt MUST start with: "Recreate this exact interior layout as a real photograph:"
+=====
+` : ''}
 CRITICAL — SKETCH ANALYSIS (if sketch images provided):
 When analyzing the sketch, you MUST describe in the prompt:
 - Exact camera position and viewing angle (e.g. "viewed from the hallway entrance looking straight ahead")
@@ -268,7 +314,7 @@ When analyzing the sketch, you MUST describe in the prompt:
 
 PROMPT STYLE FOR NANO BANANA:
 - Write in natural, flowing English paragraphs — no coded parameters, no flags
-- Start each prompt with: "A professional interior photograph of..."
+${strictMode ? '- Start each prompt with: "Recreate this exact interior layout as a real photograph:"' : '- Start each prompt with: "A professional interior photograph of..."'}
 - Describe the scene as if you are standing in the room and describing what the camera sees, from foreground to background, left to right
 - For materials, use REAL-WORLD descriptions: "polished Portoro marble with gold veining", "brushed brass with patina", "dark walnut wood veneer with book-matched grain"
 - For lighting, describe it photographically: "warm ambient glow from recessed ceiling spots casting soft pools of light", "golden light from the wall sconce creating a warm halo on the textured wall"
@@ -277,13 +323,15 @@ PROMPT STYLE FOR NANO BANANA:
   * For 2K: photorealistic, high resolution, professional interior photography, natural lighting
   * For 4K: photorealistic, ultra high resolution, 4K detail, professional interior photography, depth of field, natural lighting, editorial quality
   * For 8K: photorealistic, 8K ultra high resolution, extreme fine detail, micro-texture rendering, professional interior photography, shallow depth of field, natural lighting, editorial quality, award-winning
-- For ${nanoModel === 'Nano Banana Pro 2' ? 'Pro 2: use more detailed and longer prompts (250-350 words), Pro 2 handles complex descriptions better and produces higher fidelity results' : 'standard Nano Banana: keep prompts focused and concise (200-280 words) for best results'}
+- For ${nanoModel === 'Nano Banana Pro 2' ? 'Pro 2: use more detailed and longer prompts (300-450 words for strict mode, 250-350 for normal), Pro 2 handles complex descriptions better and produces higher fidelity results' : 'standard Nano Banana: keep prompts focused and concise (250-350 words for strict mode, 200-280 for normal) for best results'}
 - Current target: ${nanoQuality} resolution
 
 THREE VARIANTS:
-- Prompt A (Faithful): Reproduce the sketch EXACTLY as a real photograph. Same layout, same items, same perspective. Only add realistic materials, textures, and lighting.
+${strictMode ? `- Prompt A (Exact Match): Reproduce the sketch with 90%+ spatial accuracy as a real photograph. EVERY object in the EXACT same position. Only enhance with realistic materials, textures, and professional lighting.
+- Prompt B (Luxury Match): SAME exact layout and positions (90%+ match), but with premium luxury materials — richer marble, gold accents, crystal fixtures, dramatic warm lighting. No position changes.
+- Prompt C (Editorial Match): SAME exact layout and positions (90%+ match), styled for Architectural Digest. Add ONLY small lifestyle props (books, small vase) on surfaces that already have space. Cinematic golden-hour lighting.` : `- Prompt A (Faithful): Reproduce the sketch EXACTLY as a real photograph. Same layout, same items, same perspective. Only add realistic materials, textures, and lighting.
 - Prompt B (Elevated): Same layout, but upgrade materials and lighting for luxury effect — richer textures, more dramatic warm lighting, higher-end finishes. Still the same room.
-- Prompt C (Editorial): Same layout, add lifestyle staging (books, flowers, coffee cup on console, soft throw). Cinematic golden-hour lighting. Styled as if shot for Architectural Digest.
+- Prompt C (Editorial): Same layout, add lifestyle staging (books, flowers, coffee cup on console, soft throw). Cinematic golden-hour lighting. Styled as if shot for Architectural Digest.`}
 
 REFERENCE IMAGES (if provided):
 Match the exact material quality, color temperature, lighting warmth, and photographic style from the reference images. These show the TARGET quality level.
@@ -292,17 +340,17 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
 {
   "prompts": [
     {
-      "label": "Faithful to Specs",
+      "label": "${strictMode ? 'Exact Match' : 'Faithful to Specs'}",
       "description": "Brief 1-line description",
       "prompt": "The full prompt text..."
     },
     {
-      "label": "Elevated Creative",
+      "label": "${strictMode ? 'Luxury Match' : 'Elevated Creative'}",
       "description": "Brief 1-line description",
       "prompt": "The full prompt text..."
     },
     {
-      "label": "Editorial Magazine",
+      "label": "${strictMode ? 'Editorial Match' : 'Editorial Magazine'}",
       "description": "Brief 1-line description",
       "prompt": "The full prompt text..."
     }
@@ -331,8 +379,9 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
     if (aspectRatio) msg += `ASPECT RATIO: ${aspectRatio}\n`
     msg += `TARGET AI MODEL: ${nanoModel}\n`
     msg += `TARGET QUALITY: ${nanoQuality}\n`
+    msg += `STRICT SKETCH MATCH: ${strictSketchMatch ? 'YES — output image must match sketch layout 90%+. Every object in the EXACT same position, same camera angle, same proportions.' : 'NO — use sketch as general reference'}\n`
     if (refImages.length > 0) msg += `\nREFERENCE IMAGES: ${refImages.length} reference image(s) attached — analyze their style, color palette, materials, and spatial layout to inform the prompts.\n`
-    if (sketchImages.length > 0) msg += `SKETCH/3D MODEL: ${sketchImages.length} sketch image(s) attached — CRITICAL: analyze the exact spatial layout, furniture positions, wall placements, architectural features, door/window locations, and camera perspective. Describe this layout precisely in each prompt.\n`
+    if (sketchImages.length > 0) msg += `SKETCH/3D MODEL: ${sketchImages.length} sketch image(s) attached — CRITICAL: analyze the exact spatial layout, furniture positions, wall placements, architectural features, door/window locations, and camera perspective. ${strictSketchMatch ? 'Create an OBJECT-BY-OBJECT inventory: list every single item, its exact position relative to walls and other objects, its size relative to the room. The prompt must describe the scene so precisely that someone could recreate the sketch layout without seeing it.' : 'Describe this layout precisely in each prompt.'}\n`
     return msg
   }
 
@@ -539,7 +588,7 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
     setLighting(''); setMoodVibe(''); setCameraAngle('')
     setDetailLevel(''); setAspectRatio('')
     setRefImages([]); setSketchImages([])
-    setNanoModel('Nano Banana Pro 2'); setNanoQuality('4K')
+    setNanoModel('Nano Banana Pro 2'); setNanoQuality('4K'); setStrictSketchMatch(true)
     setPrompts(null); setError('')
     setGeneratedImages({}); setImageGenStates({})
   }
@@ -664,6 +713,20 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
                 onAdd={img => setSketchImages(prev => [...prev, img])}
                 onRemove={i => setSketchImages(prev => prev.filter((_, idx) => idx !== i))}
               />
+            </div>
+            <div className="strict-match-toggle">
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={strictSketchMatch}
+                  onChange={e => setStrictSketchMatch(e.target.checked)}
+                />
+                <span className="toggle-switch"></span>
+                <span className="toggle-text">
+                  Strict Sketch Match
+                  <span className="toggle-hint">Objects & camera angle must match sketch 90%+</span>
+                </span>
+              </label>
             </div>
           </section>
 
