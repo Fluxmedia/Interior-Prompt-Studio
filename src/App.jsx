@@ -573,11 +573,15 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
     setError('')
 
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 65000) // 65s client timeout
+
       const response = await fetch('/api/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
-          prompt: `Generate a photorealistic interior render based on this prompt:\n\n${promptText}`,
+          prompt: `Generate a photorealistic interior render based on this prompt. The generated image MUST match the sketch layout exactly — same camera angle, same object positions, same proportions:\n\n${promptText}`,
           sketchImages: sketchImages.map(img => ({
             mimeType: img.file.type || 'image/jpeg',
             data: img.preview.split(',')[1]
@@ -588,8 +592,15 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
           }))
         })
       })
+      clearTimeout(timeoutId)
 
-      const data = await response.json()
+      // Handle non-JSON responses (e.g. timeout, empty body)
+      let data
+      try {
+        data = await response.json()
+      } catch (parseErr) {
+        throw new Error('Server returned an invalid response. The image generation may have timed out — try again.')
+      }
       if (!response.ok) throw new Error(data.error || `API error: ${response.status}`)
 
       if (data.images?.length > 0) {
@@ -601,7 +612,11 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
         throw new Error('No image generated. Try a different prompt.')
       }
     } catch (err) {
-      setError(`Image generation error: ${err.message}`)
+      if (err.name === 'AbortError') {
+        setError('Image generation timed out (>60s). Try with fewer/smaller images or a shorter prompt.')
+      } else {
+        setError(`Image generation error: ${err.message}`)
+      }
     } finally {
       setImageGenStates(prev => ({ ...prev, [promptIndex]: false }))
     }
