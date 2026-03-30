@@ -51,7 +51,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  padding: 24px 0;
+  padding: 16px 0;
 }
 
 .header-inner {
@@ -60,7 +60,7 @@ body {
   padding: 0 40px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 20px;
 }
 
 @media (min-width: 1200px) {
@@ -74,12 +74,12 @@ body {
 .logo {
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 16px;
 }
 
 .logo-icon {
   width: auto;
-  height: 144px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
