@@ -6,7 +6,7 @@ import {
   Maximize, Layers, Home, Building2, ArrowRight
 } from 'lucide-react'
 
-const GEMINI_API_KEY = 'AIzaSyAENKA6ckV0F9HXAvh_gPlJsv3QTU1BqBA'
+// API key is now stored securely on the server side
 
 const ROOM_TYPES = [
   'Living Room', 'Bedroom', 'Master Bedroom', 'Kitchen', 'Bathroom',
@@ -308,19 +308,20 @@ OUTPUT FORMAT — respond ONLY with valid JSON, no markdown, no backticks:
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GEMINI_API_KEY}`,
-        {
+      const response = await fetch('/api/gemini', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            system_instruction: { parts: [{ text: buildSystemPrompt() }] },
-            contents: [{ parts: contentParts }],
-            generationConfig: {
-              temperature: 0.8,
-              topP: 0.95,
-              maxOutputTokens: 4096,
+            model: geminiModel,
+            body: {
+              system_instruction: { parts: [{ text: buildSystemPrompt() }] },
+              contents: [{ parts: contentParts }],
+              generationConfig: {
+                temperature: 0.8,
+                topP: 0.95,
+                maxOutputTokens: 4096,
+              }
             }
           })
         }
